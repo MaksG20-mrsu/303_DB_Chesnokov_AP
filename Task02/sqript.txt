@@ -1,0 +1,285 @@
+param()
+
+# Конфигурация
+$DatabaseName = "movies_rating.db"
+$SqlScriptName = "db_init.sql"
+$DatasetDir = "C:\Users\Андрей\303_DB_Chesnokov_AP\Task02"
+
+# Функция для экранирования SQL значений
+function Escape-SqlValue {
+    param([string]$Value)
+    
+    if ([string]::IsNullOrWhiteSpace($Value) -or $Value -eq "NULL") {
+        return "NULL"
+    }
+    
+    # Экранируем одинарные кавычки
+    $escapedValue = $Value -replace "'", "''"
+    return "'$escapedValue'"
+}
+
+# Функция для создания SQL скрипта
+function New-SqlScript {
+    Write-Host "Генерация SQL скрипта..." -ForegroundColor Green
+    
+    try {
+        $sqlContent = @()
+        
+        # Удаление существующих таблиц
+        $sqlContent += "-- Удаление существующих таблиц"
+        $sqlContent += "DROP TABLE IF EXISTS tags;"
+        $sqlContent += "DROP TABLE IF EXISTS ratings;"
+        $sqlContent += "DROP TABLE IF EXISTS users;"
+        $sqlContent += "DROP TABLE IF EXISTS movies;"
+        $sqlContent += ""
+        
+        # Создание таблиц
+        $sqlContent += New-MoviesTable
+        $sqlContent += New-UsersTable
+        $sqlContent += New-RatingsTable
+        $sqlContent += New-TagsTable
+        
+        # Загрузка данных
+        $sqlContent += Load-MoviesData
+        $sqlContent += Load-UsersData
+        $sqlContent += Load-RatingsData
+        $sqlContent += Load-TagsData
+        
+        $sqlContent += "-- ETL процесс завершен успешно"
+        
+        # Сохраняем SQL скрипт
+        $sqlContent | Out-File -FilePath $SqlScriptName -Encoding UTF8
+        Write-Host "SQL скрипт создан: $SqlScriptName" -ForegroundColor Green
+        
+    } catch {
+        Write-Error "Ошибка при генерации SQL скрипта: $($_.Exception.Message)"
+        exit 1
+    }
+}
+
+# Функции создания таблиц
+function New-MoviesTable {
+    @"
+-- Создание таблицы movies
+CREATE TABLE movies (
+    id INTEGER PRIMARY KEY,
+    title TEXT NOT NULL,
+    year INTEGER,
+    genres TEXT
+);
+
+"@
+}
+
+function New-UsersTable {
+    @"
+-- Создание таблицы users
+CREATE TABLE users (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    email TEXT,
+    gender TEXT,
+    register_date TEXT,
+    occupation TEXT
+);
+
+"@
+}
+
+function New-RatingsTable {
+    @"
+-- Создание таблицы ratings
+CREATE TABLE ratings (
+    id INTEGER PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    movie_id INTEGER NOT NULL,
+    rating REAL NOT NULL,
+    timestamp INTEGER NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id),
+    FOREIGN KEY (movie_id) REFERENCES movies(id)
+);
+
+"@
+}
+
+function New-TagsTable {
+    @"
+-- Создание таблицы tags
+CREATE TABLE tags (
+    id INTEGER PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    movie_id INTEGER NOT NULL,
+    tag TEXT NOT NULL,
+    timestamp INTEGER NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id),
+    FOREIGN KEY (movie_id) REFERENCES movies(id)
+);
+
+"@
+}
+
+# Функции загрузки данных
+function Load-MoviesData {
+    Write-Host "Загрузка данных movies..." -ForegroundColor Yellow
+    
+    $moviesFile = Join-Path $DatasetDir "movies.csv"
+    if (-not (Test-Path $moviesFile)) {
+        throw "Файл не найден: $moviesFile"
+    }
+    
+    $sqlLines = @()
+    $sqlLines += "-- Загрузка данных в таблицу movies"
+    
+    $lines = Get-Content $moviesFile -Encoding UTF8
+    $count = 0
+    
+    foreach ($line in $lines) {
+        if ([string]::IsNullOrWhiteSpace($line)) { continue }
+        
+        $parts = $line -split "`t"
+        if ($parts.Length -ge 3) {
+            $id = Escape-SqlValue $parts[0]
+            $title = Escape-SqlValue $parts[1]
+            $year = Escape-SqlValue $parts[2]
+            $genres = if ($parts.Length -gt 3) { Escape-SqlValue $parts[3] } else { "NULL" }
+            
+            $sqlLines += "INSERT INTO movies (id, title, year, genres) VALUES ($id, $title, $year, $genres);"
+            $count++
+        }
+    }
+    
+    Write-Host "Загружено $count записей в movies" -ForegroundColor Green
+    $sqlLines += ""
+    return $sqlLines
+}
+
+function Load-UsersData {
+    Write-Host "Загрузка данных users..." -ForegroundColor Yellow
+    
+    $usersFile = Join-Path $DatasetDir "users.txt"
+    if (-not (Test-Path $usersFile)) {
+        throw "Файл не найден: $usersFile"
+    }
+    
+    $sqlLines = @()
+    $sqlLines += "-- Загрузка данных в таблицу users"
+    
+    $lines = Get-Content $usersFile -Encoding UTF8
+    $count = 0
+    
+    foreach ($line in $lines) {
+        if ([string]::IsNullOrWhiteSpace($line)) { continue }
+        
+        $parts = $line -split "`t"
+        if ($parts.Length -ge 6) {
+            $id = Escape-SqlValue $parts[0]
+            $name = Escape-SqlValue $parts[1]
+            $email = Escape-SqlValue $parts[2]
+            $gender = Escape-SqlValue $parts[3]
+            $registerDate = Escape-SqlValue $parts[4]
+            $occupation = Escape-SqlValue $parts[5]
+            
+            $sqlLines += "INSERT INTO users (id, name, email, gender, register_date, occupation) VALUES ($id, $name, $email, $gender, $registerDate, $occupation);"
+            $count++
+        }
+    }
+    
+    Write-Host "Загружено $count записей в users" -ForegroundColor Green
+    $sqlLines += ""
+    return $sqlLines
+}
+
+function Load-RatingsData {
+    Write-Host "Загрузка данных ratings..." -ForegroundColor Yellow
+    
+    $ratingsFile = Join-Path $DatasetDir "ratings.csv"
+    if (-not (Test-Path $ratingsFile)) {
+        throw "Файл не найден: $ratingsFile"
+    }
+    
+    $sqlLines = @()
+    $sqlLines += "-- Загрузка данных в таблицу ratings"
+    
+    $lines = Get-Content $ratingsFile -Encoding UTF8
+    $count = 0
+    
+    for ($i = 0; $i -lt $lines.Count; $i++) {
+        $line = $lines[$i]
+        if ([string]::IsNullOrWhiteSpace($line)) { continue }
+        
+        $parts = $line -split "`t"
+        if ($parts.Length -ge 4) {
+            $userId = Escape-SqlValue $parts[0]
+            $movieId = Escape-SqlValue $parts[1]
+            $rating = Escape-SqlValue $parts[2]
+            $timestamp = Escape-SqlValue $parts[3]
+            
+            $sqlLines += "INSERT INTO ratings (id, user_id, movie_id, rating, timestamp) VALUES ($($i + 1), $userId, $movieId, $rating, $timestamp);"
+            $count++
+        }
+    }
+    
+    Write-Host "Загружено $count записей в ratings" -ForegroundColor Green
+    $sqlLines += ""
+    return $sqlLines
+}
+
+function Load-TagsData {
+    Write-Host "Загрузка данных tags..." -ForegroundColor Yellow
+    
+    $tagsFile = Join-Path $DatasetDir "tags.csv"
+    if (-not (Test-Path $tagsFile)) {
+        throw "Файл не найден: $tagsFile"
+    }
+    
+    $sqlLines = @()
+    $sqlLines += "-- Загрузка данных в таблицу tags"
+    
+    $lines = Get-Content $tagsFile -Encoding UTF8
+    $count = 0
+    
+    for ($i = 0; $i -lt $lines.Count; $i++) {
+        $line = $lines[$i]
+        if ([string]::IsNullOrWhiteSpace($line)) { continue }
+        
+        $parts = $line -split "`t"
+        if ($parts.Length -ge 4) {
+            $userId = Escape-SqlValue $parts[0]
+            $movieId = Escape-SqlValue $parts[1]
+            $tag = Escape-SqlValue $parts[2]
+            $timestamp = Escape-SqlValue $parts[3]
+            
+            $sqlLines += "INSERT INTO tags (id, user_id, movie_id, tag, timestamp) VALUES ($($i + 1), $userId, $movieId, $tag, $timestamp);"
+            $count++
+        }
+    }
+    
+    Write-Host "Загружено $count записей в tags" -ForegroundColor Green
+    $sqlLines += ""
+    return $sqlLines
+}
+
+# Основной процесс
+function Start-ETLProcess {
+    Write-Host "Запуск ETL процесса..." -ForegroundColor Cyan
+    Write-Host "Рабочая директория: $(Get-Location)" -ForegroundColor Gray
+    
+    # Проверяем существование каталога dataset
+    if (-not (Test-Path $DatasetDir)) {
+        Write-Error "Каталог '$DatasetDir' не найден!"
+        Write-Host "Убедитесь, что каталог dataset существует и содержит файлы:" -ForegroundColor Red
+        Write-Host "  - movies.csv" -ForegroundColor Red
+        Write-Host "  - users.csv" -ForegroundColor Red
+        Write-Host "  - ratings.csv" -ForegroundColor Red
+        Write-Host "  - tags.csv" -ForegroundColor Red
+        exit 1
+    }
+    
+    # Генерируем SQL скрипт
+    New-SqlScript
+    
+    Write-Host "ETL процесс завершен успешно!" -ForegroundColor Green
+}
+
+# Запуск основного процесса
+Start-ETLProcess
