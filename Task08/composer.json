@@ -1,0 +1,13 @@
+{
+    "name": "task08/student-exams",
+    "description": "Web application for managing students and exam results",
+    "type": "project",
+    "autoload": {
+        "psr-4": {
+            "Task08\\": "src/"
+        }
+    },
+    "require": {
+        "php": ">=7.4"
+    }
+}
